@@ -26,14 +26,13 @@ export const definition: Tool = {
   }),
 }
 
-export interface WebFetchArgs {
-  url: string
-  extractMode?: "markdown" | "text"
-  maxChars?: number
-}
+export async function handle(args: Record<string, unknown>): Promise<string> {
+  const url = String(args.url ?? "")
+  if (!url) return "Error: 'url' is required"
+  const extractMode = String(args.extractMode ?? "markdown") as "markdown" | "text"
+  const maxChars = args.maxChars ? Number(args.maxChars) : undefined
 
-export async function handle(args: WebFetchArgs): Promise<string> {
-  const response = await fetch(args.url, {
+  const response = await fetch(url, {
     headers: {
       "User-Agent":
         "Mozilla/5.0 (compatible; AgenticLoop/1.0; +https://github.com/kushal/flydotio)",
@@ -57,18 +56,20 @@ export async function handle(args: WebFetchArgs): Promise<string> {
 
   let content: string
 
-  if (args.extractMode === "text") {
-    content = article.textContent
+  if (extractMode === "text") {
+    content = article.textContent ?? ""
   } else {
-    content = turndown.turndown(article.content)
+    content = article.content ? turndown.turndown(article.content) : ""
   }
 
-  const header = `# ${article.title}\n\n`
+  const header = article.title ? `# ${article.title}\n\n` : ""
   const body = content.trim()
   let result = header + body
 
-  if (args.maxChars && result.length > args.maxChars) {
-    result = result.slice(0, args.maxChars) + "\n\n[...truncated]"
+  if (!result) return "Error: page has no readable content"
+
+  if (maxChars && result.length > maxChars) {
+    result = result.slice(0, maxChars) + "\n\n[...truncated]"
   }
 
   return result
