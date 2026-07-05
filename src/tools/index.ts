@@ -1,9 +1,15 @@
 import type { Tool } from "@earendil-works/pi-ai"
 import * as webFetch from "./web-fetch.js"
+import * as fileWrite from "./file-write.js"
+import * as fileRead from "./file-read.js"
+import * as fileList from "./file-list.js"
 import { tools as bashTools } from "./bash.js"
 
 const allTools = [
   { definition: webFetch.definition, handle: webFetch.handle },
+  { definition: fileWrite.definition, handle: fileWrite.handle },
+  { definition: fileRead.definition, handle: fileRead.handle },
+  { definition: fileList.definition, handle: fileList.handle },
   ...bashTools,
 ]
 
