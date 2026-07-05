@@ -156,6 +156,14 @@ Nothing currently blocked.
       problem-solving workflow, iteration limits, coding conventions.
       Current `prompts/echo-system.txt` is a minimal one-off for the demo.
 
+#### Unit / regression test strategy
+- [ ] **Figure out a solid testing approach** — trivial unit tests on
+      `prompts.ts` / `tools/` only catch the wrong bugs and create false
+      confidence. The real regressions are at the integration seam between
+      `src/index.ts` and the prompt files (wrong prompt name, wrong variable
+      name in `get()` calls). Need a strategy that actually validates
+      production call sites without recreating the whole LLM loop.
+
 ## Important Artifacts
 
 **Last updated: 2026-07-05**
