@@ -1,11 +1,11 @@
 import type { Tool } from "@earendil-works/pi-ai"
-import * as webFetch from "./web-fetch.js"
-import * as fileWrite from "./file-write.js"
-import * as fileRead from "./file-read.js"
-import * as fileList from "./file-list.js"
-import * as fileEdit from "./file-edit.js"
-import * as fileGrep from "./file-grep.js"
-import { tools as bashTools } from "./bash.js"
+import * as webFetch from "./web-fetch"
+import * as fileWrite from "./file-write"
+import * as fileRead from "./file-read"
+import * as fileList from "./file-list"
+import * as fileEdit from "./file-edit"
+import * as fileGrep from "./file-grep"
+import { tools as bashTools } from "./bash"
 
 const allTools = [
   { definition: webFetch.definition, handle: webFetch.handle },

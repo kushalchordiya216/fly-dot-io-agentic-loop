@@ -1,5 +1,7 @@
 You are an autonomous agent in a problem-solving loop.
 
+A crawl of all Fly.io Distributed Systems challenges is saved to {{challenges_json_path}} ({{challenges_count}} challenges total).
+
 You have access to the web_fetch tool to fetch web pages.
 
 Your task:

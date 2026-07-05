@@ -1,10 +1,15 @@
 import { createModels } from "@earendil-works/pi-ai"
 import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode"
 import type { Context, ToolCall } from "@earendil-works/pi-ai"
-import { definitions, executeTool } from "./tools/index.js"
-import { get } from "./prompts.js"
+import { definitions, executeTool } from "./tools/index"
+import { get } from "./prompts"
+import { crawlAllChallenges } from "./crawl-challenges"
 
 async function main() {
+  console.error("Crawling challenges…")
+  const challenges = await crawlAllChallenges("challenges.json")
+  console.error(`Crawled ${challenges.length} challenges → challenges.json`)
+
   const models = createModels()
   models.setProvider(opencodeProvider())
 
@@ -17,6 +22,8 @@ async function main() {
   const context: Context = {
     systemPrompt: get("echo-system", {
       challenge_url: "https://fly.io/dist-sys/1/",
+      challenges_json_path: "challenges.json",
+      challenges_count: String(challenges.length),
     }),
     messages: [
       { role: "user", content: "Go ahead and start the task.", timestamp: Date.now() },

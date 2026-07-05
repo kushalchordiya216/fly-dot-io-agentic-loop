@@ -1,13 +1,15 @@
 import { createModels, type Context } from "@earendil-works/pi-ai"
 import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode"
-import { handle as webFetch } from "./tools/web-fetch.js"
-import { get } from "./prompts.js"
+import { writeFile } from "node:fs/promises"
+import { fileURLToPath } from "node:url"
+import { handle as webFetch } from "./tools/web-fetch"
+import { get } from "./prompts"
 
 const models = createModels()
 models.setProvider(opencodeProvider())
 const model = models.getModel("opencode", "deepseek-v4-flash-free")!
 
-interface Challenge {
+export interface Challenge {
   title: string
   description: string
   link: string
@@ -61,21 +63,30 @@ async function extractChallenge(pageContent: string, url: string): Promise<Chall
   }
 }
 
-async function crawl(): Promise<void> {
+export async function crawlAllChallenges(outputPath?: string): Promise<Challenge[]> {
+  const outFile = outputPath ?? "challenges.json"
+  const challenges: Challenge[] = []
   let currentUrl: string | null = "https://fly.io/dist-sys/1/"
 
   while (currentUrl) {
     const result = await webFetch({ url: currentUrl, extractMode: "markdown" })
 
     if (result.startsWith("Error:")) {
-      console.error(result)
+      console.error(`Failed to fetch ${currentUrl}: ${result}`)
       break
     }
 
     const challenge = await extractChallenge(result, currentUrl)
-    console.log(JSON.stringify(challenge))
+    challenges.push(challenge)
+    await writeFile(outFile, JSON.stringify(challenges, null, 2))
+    console.error(`  [${challenges.length}] ${challenge.title}`)
     currentUrl = challenge.next_link
   }
+
+  return challenges
 }
 
-crawl().catch(console.error)
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]
+if (isMain) {
+  crawlAllChallenges().catch(console.error)
+}
