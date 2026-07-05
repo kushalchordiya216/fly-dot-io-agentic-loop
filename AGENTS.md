@@ -4,7 +4,30 @@ Build an autonomous agent that fetches coding problems, solves them, tests the
 solution, iterates until correct, then moves to the next problem. All fully
 autonomous, running as a TypeScript process that calls the opencode Zen LLM.
 
+## Freshness Verification — READ THIS FIRST
+
+**Last updated: 2026-07-05**
+
+This file is self-referential. Every section has a `yyyy-mm-dd` date stamp.
+Whenever you start a new session, for every section you intend to use:
+
+1. Read its date stamp.
+2. If the stamp is older than 7 days from today, **do not assume it is still
+   accurate**. Instead, verify by scanning the relevant code/config, or ask the
+   user directly whether the section still holds.
+
+### Self-updating rule
+
+Whenever a major architectural decision is made, a TODO is completed/cancelled,
+a feature is shipped, or any section's content becomes stale, **update this
+file** — bump the date and reflect the new state. Treat AGENTS.md as a living
+document, not a historical record.
+
+---
+
 ## Stack
+
+**Last updated: 2026-07-05**
 
 | Layer | Choice |
 |-------|--------|
@@ -17,6 +40,8 @@ autonomous, running as a TypeScript process that calls the opencode Zen LLM.
 
 ## Architecture
 
+**Last updated: 2026-07-05**
+
 ```
 src/
   index.ts          # agent loop: call model → execute tools → repeat
@@ -27,7 +52,7 @@ src/
     index.ts        # tool registry + dispatcher
 prompts/
   echo-system.txt   # example: system prompt for challenge #1
-
+```
 
 The loop starts with a user prompt + tool definitions. Each turn:
 1. Call `models.complete()` with context + tools
@@ -36,6 +61,8 @@ The loop starts with a user prompt + tool definitions. Each turn:
 4. Repeat until no more tool calls → final text output
 
 ## Current Progress
+
+**Last updated: 2026-07-05**
 
 ### Done
 - [x] TypeScript project bootstrapped (tsconfig, tsx runner, strict mode)
@@ -65,6 +92,8 @@ The loop starts with a user prompt + tool definitions. Each turn:
 Nothing currently blocked.
 
 ## Architectural TODOs (Next Session)
+
+**Last updated: 2026-07-05**
 
 These are open design questions from the brainstorming session. Each needs a
 decision before implementation begins.
@@ -136,11 +165,15 @@ decision before implementation begins.
 
 ## Important Artifacts
 
+**Last updated: 2026-07-05**
+
 - **`.env`** (gitignored) — `OPENCODE_API_KEY` for LLM auth
 - **`src/tools/bash.ts`** — in-memory `Map<string, ProcessEntry>` tracks all
   background processes across turns. Auto-cleanup every 30s via `setInterval`.
 
 ## Prompt Management
+
+**Last updated: 2026-07-05**
 
 Prompts live in `prompts/*.txt` and are loaded by `src/prompts.ts` via
 `get(name, vars?)`.
@@ -170,11 +203,15 @@ Prompts live in `prompts/*.txt` and are loaded by `src/prompts.ts` via
 
 ## General Behaviour
 
+**Last updated: 2026-07-05**
+
 When investigating dependencies, libraries, or tools, prefer official docs,
 READMEs, or package documentation over reading source code directly. Fetch docs
 first; only fall back to source or `node_modules` when docs are insufficient.
 
 ## Development Workflow
+
+**Last updated: 2026-07-05**
 
 ### Graphite (PR stack management)
 
