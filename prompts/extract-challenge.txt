@@ -1,0 +1,16 @@
+Extract challenge metadata from the page content below.
+
+Return ONLY valid JSON with these fields:
+- "title": the challenge title (e.g. "Challenge #1: Echo")
+- "description": a short 1-2 sentence summary of what the challenge involves
+- "next_link": the URL of the next challenge page, or null if there is none
+
+Rules:
+- next_link must be a full absolute URL starting with https://fly.io/dist-sys/
+- If the page mentions "move on to the next challenge" or "continue to" with a link, that is next_link
+- If there is no next challenge mentioned, set next_link to null
+- description must be concise, extracted from the page content
+- Respond with a single JSON object, no markdown wrapping, no extra text
+
+Page content:
+{{page_content}}
