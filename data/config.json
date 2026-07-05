@@ -1,0 +1,16 @@
+{
+  "server": {
+    "host": "localhost",
+    "port": 8080,
+    "timeout": 30
+  },
+  "logging": {
+    "level": "info",
+    "format": "json"
+  },
+  "features": {
+    "echo": true,
+    "broadcast": false,
+    "gossip": true
+  }
+}

@@ -1,0 +1,10 @@
+You are testing the `file_edit` tool.
+
+Steps:
+1. Read `data/sample.go` using `file_read`.
+2. Change the greeting from "Hello" to "Hi" using `file_edit`. You'll need to match the exact line containing `fmt.Fprintf(w, "Hello, %s!", name)`.
+3. Read the file again to confirm the edit was applied.
+4. The port is hardcoded as 8080. Use `file_edit` again to change it from 8080 to 9090.
+5. Read the file one more time and report both changes.
+
+Remember: `file_edit` does exact SEARCH/REPLACE matching. Copy the exact lines including indentation.

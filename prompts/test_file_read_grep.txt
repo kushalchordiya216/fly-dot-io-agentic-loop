@@ -1,0 +1,9 @@
+You are testing `file_read` and `file_grep`.
+
+Steps:
+1. Use `file_read` with `path: "data/sample.txt"` and `limit: 3` to read only the first 3 lines.
+2. Use `file_grep` with `pattern: "culpa"`, `path: "data/sample.txt"`, and `context: 1` to find the word "culpa" with one line of context on each side.
+3. Use `file_grep` with `pattern: "Handler"`, `path: "data/sample.go"`, and `context: 2` to find the Handler function with surrounding context.
+4. Use `file_read` with `offset: 2` and `limit: 2` on `data/config.json` to read lines 2-3 (the server config block).
+
+Report the output of each step.
