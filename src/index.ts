@@ -1,25 +1,48 @@
 import { createModels } from "@earendil-works/pi-ai"
 import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode"
+import type { Context, ToolCall } from "@earendil-works/pi-ai"
+import { definitions, executeTool } from "./tools/index.js"
+import { get } from "./prompts.js"
 
 async function main() {
   const models = createModels()
   models.setProvider(opencodeProvider())
 
   const model = models.getModel("opencode", "deepseek-v4-flash-free")!
+  if (!model) {
+    console.error("Model not found")
+    process.exit(1)
+  }
 
-  const response = await models.complete(model, {
+  const context: Context = {
+    systemPrompt: get("echo-system", {
+      challenge_url: "https://fly.io/dist-sys/1/",
+    }),
     messages: [
-      {
-        role: "user",
-        content:
-          "You are helping build an agentic problem solving loop. " +
-          "The system should: fetch new problems, solve them, test the solution, " +
-          "iterate until correct, then move to the next problem. " +
-          "All fully autonomous. Give me a brief overview of how you'd architect this system.",
-        timestamp: Date.now(),
-      },
+      { role: "user", content: "Go ahead and start the task.", timestamp: Date.now() },
     ],
-  })
+    tools: definitions,
+  }
+
+  let response = await models.complete(model, context)
+  context.messages.push(response)
+
+  while (response.stopReason === "toolUse") {
+    const toolCalls = response.content.filter((b): b is ToolCall => b.type === "toolCall")
+    for (const call of toolCalls) {
+      const result = await executeTool(call.name, call.arguments)
+      context.messages.push({
+        role: "toolResult",
+        toolCallId: call.id,
+        toolName: call.name,
+        content: [{ type: "text", text: result }],
+        isError: result.startsWith("Error"),
+        timestamp: Date.now(),
+      })
+    }
+    response = await models.complete(model, context)
+    context.messages.push(response)
+  }
 
   for (const block of response.content) {
     if (block.type === "text") {

@@ -1,0 +1,218 @@
+# FlyDotIO — Agentic Problem-Solving Loop
+
+Build an autonomous agent that fetches coding problems, solves them, tests the
+solution, iterates until correct, then moves to the next problem. All fully
+autonomous, running as a TypeScript process that calls the opencode Zen LLM.
+
+## Stack
+
+| Layer | Choice |
+|-------|--------|
+| Runtime | Node 24 + tsx |
+| Language | TypeScript (strict, ES2022, bundler resolution) |
+| LLM Gateway | `@earendil-works/pi-ai` — opencode Zen, deepseek-v4-flash-free |
+| Auth | `OPENCODE_API_KEY` in `.env` (gitignored) |
+| CLI + PRs | Graphite (`gt`) |
+| Host | GitHub (`kushalchordiya216/fly-dot-io-agentic-loop`) |
+
+## Architecture
+
+```
+src/
+  index.ts          # agent loop: call model → execute tools → repeat
+  prompts.ts        # prompt loader: read + cache + template substitution
+  tools/
+    web-fetch.ts    # fetch URL, extract content via Mozilla Readability
+    bash.ts         # async process mgmt: spawn / status / kill
+    index.ts        # tool registry + dispatcher
+prompts/
+  echo-system.txt   # example: system prompt for challenge #1
+
+
+The loop starts with a user prompt + tool definitions. Each turn:
+1. Call `models.complete()` with context + tools
+2. Check response for `toolCall` blocks
+3. Execute tools, push `toolResult` messages back to context
+4. Repeat until no more tool calls → final text output
+
+## Current Progress
+
+### Done
+- [x] TypeScript project bootstrapped (tsconfig, tsx runner, strict mode)
+- [x] pi-ai integration with opencode Zen provider
+- [x] Auth via `OPENCODE_API_KEY` env var (loaded from `.env` via `--env-file`)
+- [x] `web_fetch` tool — HTTP GET + Mozilla Readability extraction → markdown/text
+- [x] `bash_spawn` — launch command in background, return process ID
+- [x] `bash_status` — poll process state + accumulated stdout/stderr
+- [x] `bash_kill` — send signal (SIGTERM/SIGKILL/SIGINT/USR1/USR2)
+- [x] Process registry with auto-cleanup (reap after 1min, auto-kill orphans on exit)
+- [x] Repo created on GitHub, initial commit pushed to `main`
+- [x] **PR #1** (`tools` → `main`): merged
+- [x] **PR #2** (`agents-md` → `tools`): merged, AGENTS.md now on `main`
+- [x] Stale remote branches (`tools`, `agents-md`) deleted
+- [x] **Agent loop wired** — `src/index.ts` now uses the tool definitions and
+      loops over `toolCall` blocks, pushing `toolResult` messages back to
+      context until the model returns a final text response.
+- [x] **Problem source decided** — Fly.io Distributed Systems challenge
+      series (fly.io/dist-sys/N/), solved in Go, tested with Maelstrom.
+
+### In Flight
+- [ ] **System prompt** — the agent needs a proper prompt describing the
+      problem-solving workflow, iteration limits, coding conventions.
+      Current `src/index.ts` has a minimal one-off prompt for challenge #1.
+
+### Blocked
+Nothing currently blocked.
+
+## Architectural TODOs (Next Session)
+
+These are open design questions from the brainstorming session. Each needs a
+decision before implementation begins.
+
+### Outer loop — TS orchestrator with DAG scheduling
+- [ ] **Fetch all challenges upfront** — crawl fly.io/dist-sys/ and collect
+      every challenge page (URL, title, dependencies).
+- [ ] **Build a dependency DAG** — arrange challenges by their stated
+      prerequisites. Some challenges are independent and can run in parallel;
+      others depend on earlier ones being solved first.
+- [ ] **Scheduler** — fire off subagents for tasks whose dependencies are
+      complete. Track in-flight vs. done vs. failed. Re-run failed ones with
+      bounded retries.
+
+### Inner loop — subagent per challenge
+- [ ] **Subagent abstraction** — each challenge gets its own LLM context +
+      tool loop (solve → test → fix → repeat). Subagent is spawned by the
+      outer orchestrator with a scoped system prompt for that challenge.
+- [ ] **Scoped tool access** — subagent gets `web_fetch` (for the challenge
+      page), file tools, bash, and the test tool. No access to other
+      challenges' state.
+- [ ] **Bounded iterations** — cap the inner loop (e.g. 10 attempts) before
+      giving up and reporting failure to the orchestrator.
+
+### File tools
+- [ ] **`file_write`** — write/overwrite a file with given content. Open
+      question: full overwrite only, or also support surgical edits
+      (find/replace a region)? Full overwrite is simpler; edits avoid
+      re-sending large files. Decide later.
+- [ ] **`file_read`** — read a file's contents. Needed so the subagent can
+      re-read its own code between iterations.
+- [ ] **`file_list`** (optional) — list directory contents. Useful for
+      navigating a multi-file solution.
+
+### Test tool / test subagent
+- [ ] **Dedicated test primitive** — whose only job is to test a given
+      challenge's implemented solution and return a structured result:
+      `{ result: "pass" | "fail", message: "<why>" }`.
+      Open question: is this a **tool** the subagent calls (simpler, stays
+      in-process), or a **separate subagent** (more isolated, can retry
+      independently)? Lean toward tool for now.
+- [ ] **Maelstrom wrapper** — wrap `maelstrom test -w <workload> --bin ...`
+      so the test primitive doesn't need raw bash. Parses the
+      `Everything looks good!` success signal and extracts failure context
+      from stderr/logs.
+
+### Progress store
+- [ ] **Persistent + concurrency-safe + in-process readable** — as multiple
+      subagents run in parallel, they need to record progress (which
+      challenge is in-flight / passed / failed, attempt count, last error)
+      somewhere the orchestrator can read without race conditions.
+      Candidates: a JSON file with a file lock, SQLite, or an in-memory
+      map that checkpoints to disk. Tech TBD.
+- [ ] **Schema** — what fields per challenge: id, url, title, status,
+      attempts, last_error, solution_path, completed_at?
+
+### Context management
+- [ ] **Fresh context per subagent** — each challenge gets a clean LLM
+      context (bounded, no cross-challenge bleed).
+- [ ] **Carried summary** (optional) — after a challenge passes, ask the
+      subagent for a short "lessons learned" that the orchestrator can
+      inject into dependent challenges' prompts. Preserves insights
+      without unbounded context growth.
+
+### Environment
+- [ ] **Maelstrom + Go bootstrap** — is Maelstrom + OpenJDK + Go already
+      installed on the host, or does the orchestrator need to detect and
+      install them before starting challenges?
+
+## Important Artifacts
+
+- **`.env`** (gitignored) — `OPENCODE_API_KEY` for LLM auth
+- **`src/tools/bash.ts`** — in-memory `Map<string, ProcessEntry>` tracks all
+  background processes across turns. Auto-cleanup every 30s via `setInterval`.
+
+## Prompt Management
+
+Prompts live in `prompts/*.txt` and are loaded by `src/prompts.ts` via
+`get(name, vars?)`.
+
+### File naming
+- `kebab-case.txt` (Unix-safe: any character except `/` and `\0`)
+- One prompt per file, named by its purpose (e.g. `echo-system.txt` for the
+  Challenge #1 Echo system prompt)
+
+### Template variables
+- `{{variable_name}}` syntax (`snake_case` convention)
+- Variables are replaced with `String.replaceAll()` before the prompt is used
+- Calling code passes variables as a `Record<string, string>`:
+  ```ts
+  get("echo-system", { challenge_url: "https://fly.io/dist-sys/1/" })
+  ```
+
+### Version control
+- Prompts are tracked in git alongside code — full history, diffs, blame,
+  rollback via standard `git log -p prompts/`, `git diff`, `git blame`
+- Prompt changes go through the same PR workflow as code changes
+- No external tools needed
+
+### Cache
+- Prompts are cached in memory after first read
+- `reload(name)` and `clear()` available for hot-reload during development
+
+## General Behaviour
+
+When investigating dependencies, libraries, or tools, prefer official docs,
+READMEs, or package documentation over reading source code directly. Fetch docs
+first; only fall back to source or `node_modules` when docs are insufficient.
+
+## Development Workflow
+
+### Graphite (PR stack management)
+
+Use `gt` for all branch and PR operations, never raw `git` for branching:
+
+```
+gt create -am "msg"          # create branch, stage all, commit
+gt modify -cam "msg"         # add a new commit to current branch
+gt submit                    # push current branch, create/update PR
+gt ss                        # push all branches in stack
+gt sync                      # pull trunk, restack, clean up
+gt log / gt ls               # view stack
+gt up / gt down              # navigate stack
+gt squash                    # squash all commits in current branch into one
+```
+
+`main` is the trunk. Every feature/fix gets its own branch off `main` (or off
+another branch in a stack). The trunk is never committed to directly.
+
+After a PR is merged, delete the remote branch with `gt sync` (interactive) or
+`gt branch delete` + `git push origin --delete <branch>`.
+
+### Git Hygiene
+
+- **Small commits** — each commit is a single logical change. If it needs
+  "and also" in the message, it should be two commits.
+- **Descriptive but short messages** — imperative mood, ≤72 chars subject,
+  blank line + bullets for context if needed.
+- **No WIP commits on shared branches** — squash before submitting.
+- **`.env` never committed** — already in `.gitignore`.
+
+### npm Tooling
+
+```
+npm start          # node --env-file .env --import tsx/esm src/index.ts
+npm run typecheck  # tsc --noEmit
+npm run build      # tsc
+```
+
+Always run `typecheck` before submitting/committing. Keep `tsc --noEmit`
+clean.
