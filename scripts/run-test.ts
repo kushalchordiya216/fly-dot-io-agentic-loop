@@ -3,10 +3,20 @@ import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode"
 import { definitions, executeTool } from "../src/tools/index.js"
 import { get } from "../src/prompts.js"
 
+function describeResponse(response: Context["messages"][number]) {
+  if (response.role !== "assistant") return
+
+  const blocks = response.content.map((block) => block.type).join(", ") || "none"
+  console.error(`  ← model stopReason=${response.stopReason}; content blocks=${blocks}`)
+  if (response.errorMessage) {
+    console.error(`  ← model error: ${response.errorMessage}`)
+  }
+}
+
 async function main() {
   const promptName = process.argv[2]
   if (!promptName) {
-    console.error("Usage: npx tsx scripts/run-test.ts <prompt-name>")
+    console.error("Usage: node --env-file .env --import tsx/esm scripts/run-test.ts <prompt-name>")
     console.error("Available: test_file_write, test_file_edit, test_file_read_grep, test_file_workflow")
     process.exit(1)
   }
@@ -30,7 +40,9 @@ async function main() {
 
   console.error(`\nRunning test with prompt: ${promptName}\n`)
 
+  console.error("  → calling model")
   let response = await models.complete(model, context)
+  describeResponse(response)
   context.messages.push(response)
 
   while (response.stopReason === "toolUse") {
@@ -48,14 +60,24 @@ async function main() {
       })
       console.error(`  ← ${result.slice(0, 200)}${result.length > 200 ? "..." : ""}`)
     }
+    console.error("  → calling model")
     response = await models.complete(model, context)
+    describeResponse(response)
     context.messages.push(response)
   }
 
+  let printedText = false
   for (const block of response.content) {
     if (block.type === "text") {
       console.log(block.text)
+      printedText = true
     }
+  }
+
+  if (!printedText) {
+    console.error("No final text returned by the model. Full response:")
+    console.error(JSON.stringify(response, null, 2))
+    process.exit(1)
   }
 }
 
