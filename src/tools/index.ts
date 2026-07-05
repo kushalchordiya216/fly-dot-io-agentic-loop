@@ -3,6 +3,8 @@ import * as webFetch from "./web-fetch.js"
 import * as fileWrite from "./file-write.js"
 import * as fileRead from "./file-read.js"
 import * as fileList from "./file-list.js"
+import * as fileEdit from "./file-edit.js"
+import * as fileGrep from "./file-grep.js"
 import { tools as bashTools } from "./bash.js"
 
 const allTools = [
@@ -10,6 +12,8 @@ const allTools = [
   { definition: fileWrite.definition, handle: fileWrite.handle },
   { definition: fileRead.definition, handle: fileRead.handle },
   { definition: fileList.definition, handle: fileList.handle },
+  { definition: fileEdit.definition, handle: fileEdit.handle },
+  { definition: fileGrep.definition, handle: fileGrep.handle },
   ...bashTools,
 ]
 
