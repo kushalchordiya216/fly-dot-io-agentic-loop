@@ -44,19 +44,19 @@ document, not a historical record.
 
 ```
 src/
-  index.ts              # agent loop: call model → execute tools → repeat
-  prompts.ts            # prompt loader: read + cache + template substitution
-  subagent.ts           # generic subagent runner (scoped tools, bounded iterations)
-  crawl-challenges.ts   # sequential challenge crawler (JSON per page)
+  index.ts          # agent loop: call model → execute tools → repeat
+  prompts.ts        # prompt loader: read + cache + template substitution
   tools/
-    web-fetch.ts        # fetch URL, extract content via Mozilla Readability
-    bash.ts             # async process mgmt: spawn / status / kill
-    file-read.ts        # read file contents (optional line range)
-    file-write.ts       # write/overwrite file with content
-    file-list.ts        # list directory contents
-    index.ts            # tool registry + dispatcher
+    web-fetch.ts    # fetch URL, extract content via Mozilla Readability
+    bash.ts         # async process mgmt: spawn / status / kill
+    file-read.ts    # read file contents (optional line range)
+    file-write.ts   # full overwrite — create/replace files
+    file-edit.ts    # surgical SEARCH/REPLACE via editkit fuzzyReplace
+    file-grep.ts    # search file for pattern with context lines
+    file-list.ts    # list directory contents
+    index.ts        # tool registry + dispatcher
 prompts/
-  echo-system.txt       # example: system prompt for challenge #1
+  echo-system.txt   # example: system prompt for challenge #1
 ```
 
 The loop starts with a user prompt + tool definitions. Each turn:
@@ -87,14 +87,11 @@ The loop starts with a user prompt + tool definitions. Each turn:
       context until the model returns a final text response.
 - [x] **Problem source decided** — Fly.io Distributed Systems challenge
       series (fly.io/dist-sys/N/), solved in Go, tested with Maelstrom.
-- [x] **File tools** — `file_write`, `file_read`, `file_list` built and
-      registered in tool registry. PR #4 (`task/file-tools`).
-- [x] **Subagent abstraction** — `src/subagent.ts` with generic
-      `runSubagent()`: scoped tools, bounded iterations, model override,
-      structured result. PR #5 (`task/subagent-abstraction`).
-- [x] **Challenge crawler** — `src/crawl-challenges.ts` sequentially
-      crawls pages, prints JSON `{ title, description, link, next_link }`.
-      PR #6 (`task/crawler`).
+
+### In Flight
+- [ ] **System prompt** — the agent needs a proper prompt describing the
+      problem-solving workflow, iteration limits, coding conventions.
+      Current `src/index.ts` has a minimal one-off prompt for challenge #1.
 
 ### Blocked
 Nothing currently blocked.
@@ -103,9 +100,40 @@ Nothing currently blocked.
 
 **Last updated: 2026-07-05**
 
-### Layer 2 — Depends on Layer 1 (file tools, subagent abstraction, crawler)
+These are open design questions from the brainstorming session. Each needs a
+decision before implementation begins.
 
-#### Test tool / test subagent
+### Outer loop — TS orchestrator with DAG scheduling
+- [ ] **Fetch all challenges upfront** — crawl fly.io/dist-sys/ and collect
+      every challenge page (URL, title, dependencies).
+- [ ] **Build a dependency DAG** — arrange challenges by their stated
+      prerequisites. Some challenges are independent and can run in parallel;
+      others depend on earlier ones being solved first.
+- [ ] **Scheduler** — fire off subagents for tasks whose dependencies are
+      complete. Track in-flight vs. done vs. failed. Re-run failed ones with
+      bounded retries.
+
+### Inner loop — subagent per challenge
+- [ ] **Subagent abstraction** — each challenge gets its own LLM context +
+      tool loop (solve → test → fix → repeat). Subagent is spawned by the
+      outer orchestrator with a scoped system prompt for that challenge.
+- [ ] **Scoped tool access** — subagent gets `web_fetch` (for the challenge
+      page), file tools, bash, and the test tool. No access to other
+      challenges' state.
+- [ ] **Bounded iterations** — cap the inner loop (e.g. 10 attempts) before
+      giving up and reporting failure to the orchestrator.
+
+### File tools
+- [x] **`file_write`** — full overwrite. Good for new files and small files.
+- [x] **`file_edit`** — surgical SEARCH/REPLACE via `editkit`'s `fuzzyReplace`.
+      Indentation-flexible, trailing-whitespace tolerant. Returns structured
+      errors for not-found / ambiguous-match cases.
+- [x] **`file_read`** — full or line-range read (offset/limit).
+- [x] **`file_grep`** — search a file for a pattern (string or regex), with
+      optional context lines before/after each match.
+- [x] **`file_list`** — list files and directories.
+
+### Test tool / test subagent
 - [ ] **Dedicated test primitive** — whose only job is to test a given
       challenge's implemented solution and return a structured result:
       `{ result: "pass" | "fail", message: "<why>" }`.
@@ -117,52 +145,28 @@ Nothing currently blocked.
       `Everything looks good!` success signal and extracts failure context
       from stderr/logs.
 
-#### Solver subagent
-- [ ] **Per-challenge solver** — an instance of the generic subagent with
-      a scoped system prompt for a given challenge and access to web_fetch,
-      file tools, bash, and test tool. Runs solve → test → fix → repeat
-      with bounded iterations before reporting failure.
+### Progress store
+- [ ] **Persistent + concurrency-safe + in-process readable** — as multiple
+      subagents run in parallel, they need to record progress (which
+      challenge is in-flight / passed / failed, attempt count, last error)
+      somewhere the orchestrator can read without race conditions.
+      Candidates: a JSON file with a file lock, SQLite, or an in-memory
+      map that checkpoints to disk. Tech TBD.
+- [ ] **Schema** — what fields per challenge: id, url, title, status,
+      attempts, last_error, solution_path, completed_at?
 
-#### Progress tracker subagent
-- [ ] **Post-hoc knowledge capture** — after a solver finishes a challenge,
-      a separate subagent reads the generated code and outputs, then writes
-      a structured markdown file (problem overview, approach, key insights,
-      resources, follow-ups). Built on the generic subagent abstraction.
-
-### Layer 3 — Depends on Layer 2
-
-#### Outer scheduler / DAG orchestrator
-- [ ] **Fetch all challenges** — use the crawler to collect all challenge
-      metadata and build a dependency DAG.
-- [ ] **Scheduler** — fire off solver subagents for tasks whose dependencies
-      are complete. Track in-flight vs. done vs. failed. Bounded retries.
-
-### Cross-cutting concerns
-
-#### Context management
-- [ ] **Fresh context per subagent** — each subagent gets a clean LLM
+### Context management
+- [ ] **Fresh context per subagent** — each challenge gets a clean LLM
       context (bounded, no cross-challenge bleed).
 - [ ] **Carried summary** (optional) — after a challenge passes, ask the
-      solver subagent for a short "lessons learned" that the orchestrator
-      can inject into dependent challenges' prompts.
+      subagent for a short "lessons learned" that the orchestrator can
+      inject into dependent challenges' prompts. Preserves insights
+      without unbounded context growth.
 
-#### Environment bootstrap
-- [ ] **Maelstrom + Go install check** — the main loop's prompt should
-      include instructions to detect whether Maelstrom, OpenJDK, and Go
-      are installed, and install them if missing via the bash tool.
-
-#### System prompt
-- [ ] **Proper workflow prompt** — the agent needs a prompt describing the
-      problem-solving workflow, iteration limits, coding conventions.
-      Current `prompts/echo-system.txt` is a minimal one-off for the demo.
-
-#### Unit / regression test strategy
-- [ ] **Figure out a solid testing approach** — trivial unit tests on
-      `prompts.ts` / `tools/` only catch the wrong bugs and create false
-      confidence. The real regressions are at the integration seam between
-      `src/index.ts` and the prompt files (wrong prompt name, wrong variable
-      name in `get()` calls). Need a strategy that actually validates
-      production call sites without recreating the whole LLM loop.
+### Environment
+- [ ] **Maelstrom + Go bootstrap** — is Maelstrom + OpenJDK + Go already
+      installed on the host, or does the orchestrator need to detect and
+      install them before starting challenges?
 
 ## Important Artifacts
 
