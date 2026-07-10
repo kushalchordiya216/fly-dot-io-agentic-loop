@@ -15,7 +15,7 @@ export interface ChallengeRow {
   solution_path: string | null
   tags: string | null
   solution_note: string | null
-  dependencies: string
+  dependencies: string[]
   completed_at: number | null
 }
 
@@ -27,6 +27,8 @@ export interface SeedChallenge {
   dependencies?: string[]
 }
 
+type DbChallengeRow = Omit<ChallengeRow, "dependencies"> & { dependencies: string }
+
 class ProgressStore {
   private db: DatabaseSync
 
@@ -37,55 +39,113 @@ class ProgressStore {
   }
 
   init(): void {
+    this.db.exec(`DROP TABLE IF EXISTS challenge_dependencies`)
+    this.db.exec(`DROP TABLE IF EXISTS challenges`)
     this.db.exec(`
-      CREATE TABLE IF NOT EXISTS challenges (
+      CREATE TABLE challenges (
         id            TEXT PRIMARY KEY,
         url           TEXT NOT NULL,
         title         TEXT NOT NULL,
         description   TEXT NOT NULL,
-        status        TEXT NOT NULL DEFAULT 'pending',
+        status        TEXT NOT NULL DEFAULT 'pending'
+                      CHECK(status IN ('pending', 'in_progress', 'completed', 'failed')),
         attempts      INTEGER NOT NULL DEFAULT 0,
         last_error    TEXT,
         solution_path TEXT,
         tags          TEXT,
         solution_note TEXT,
-        dependencies  TEXT NOT NULL DEFAULT '[]',
         completed_at  INTEGER
+      )
+    `)
+    this.db.exec(`
+      CREATE TABLE challenge_dependencies (
+        challenge_id  TEXT NOT NULL REFERENCES challenges(id) ON DELETE CASCADE,
+        dependency_id TEXT NOT NULL REFERENCES challenges(id) ON DELETE CASCADE,
+        PRIMARY KEY (challenge_id, dependency_id),
+        CHECK(challenge_id != dependency_id)
       )
     `)
   }
 
   seed(challenges: SeedChallenge[]): void {
-    const stmt = this.db.prepare(
-      `INSERT OR REPLACE INTO challenges (id, url, title, description, dependencies)
-       VALUES (?, ?, ?, ?, ?)`,
+    const insertChallenge = this.db.prepare(
+      `INSERT OR REPLACE INTO challenges (id, url, title, description)
+       VALUES (?, ?, ?, ?)`,
+    )
+    const insertDep = this.db.prepare(
+      `INSERT OR IGNORE INTO challenge_dependencies (challenge_id, dependency_id)
+       VALUES (?, ?)`,
     )
     for (const c of challenges) {
-      stmt.run(c.id, c.url, c.title, c.description, JSON.stringify(c.dependencies ?? []))
+      insertChallenge.run(c.id, c.url, c.title, c.description)
+      for (const dep of c.dependencies ?? []) {
+        insertDep.run(c.id, dep)
+      }
     }
   }
 
   get(id: string): ChallengeRow | null {
-    const row = this.db.prepare("SELECT * FROM challenges WHERE id = ?").get(id) as
-      | ChallengeRow
-      | undefined
-    return row ?? null
+    const row = this.db
+      .prepare(`
+        SELECT
+          c.*,
+          CASE
+            WHEN COUNT(cd.dependency_id) = 0 THEN '[]'
+            ELSE json_group_array(cd.dependency_id)
+          END AS dependencies
+        FROM challenges c
+        LEFT JOIN challenge_dependencies cd ON cd.challenge_id = c.id
+        WHERE c.id = ?
+        GROUP BY c.id
+      `)
+      .get(id) as DbChallengeRow | undefined
+    return row ? { ...row, dependencies: JSON.parse(row.dependencies) } : null
   }
 
   getByStatus(status: string): ChallengeRow[] {
-    return this.db
-      .prepare("SELECT * FROM challenges WHERE status = ?")
-      .all(status) as unknown as ChallengeRow[]
+    const rows = this.db
+      .prepare(`
+        SELECT
+          c.*,
+          CASE
+            WHEN COUNT(cd.dependency_id) = 0 THEN '[]'
+            ELSE json_group_array(cd.dependency_id)
+          END AS dependencies
+        FROM challenges c
+        LEFT JOIN challenge_dependencies cd ON cd.challenge_id = c.id
+        WHERE c.status = ?
+        GROUP BY c.id
+        ORDER BY c.id
+      `)
+      .all(status) as DbChallengeRow[]
+    return rows.map((r) => ({ ...r, dependencies: JSON.parse(r.dependencies) }))
   }
 
   getReady(): ChallengeRow[] {
-    return this.db
-      .prepare("SELECT * FROM challenges WHERE status = 'pending' ORDER BY id")
-      .all() as unknown as ChallengeRow[]
+    const rows = this.db
+      .prepare(`
+        SELECT
+          c.*,
+          CASE
+            WHEN COUNT(cd.dependency_id) = 0 THEN '[]'
+            ELSE json_group_array(cd.dependency_id)
+          END AS dependencies
+        FROM challenges c
+        LEFT JOIN challenge_dependencies cd ON cd.challenge_id = c.id
+        LEFT JOIN challenges d ON d.id = cd.dependency_id
+        WHERE c.status = 'pending'
+        GROUP BY c.id
+        HAVING
+          COUNT(cd.dependency_id) = 0
+          OR COUNT(cd.dependency_id) = SUM(CASE WHEN d.status = 'completed' THEN 1 ELSE 0 END)
+        ORDER BY c.id
+      `)
+      .all() as DbChallengeRow[]
+    return rows.map((r) => ({ ...r, dependencies: JSON.parse(r.dependencies) }))
   }
 
   update(id: string, partial: Partial<ChallengeRow>): void {
-    const keys = Object.keys(partial).filter((k) => k !== "id")
+    const keys = Object.keys(partial).filter((k) => k !== "id" && k !== "dependencies")
     if (keys.length === 0) return
 
     const setClause = keys.map((k) => `${k} = ?`).join(", ")
@@ -98,7 +158,21 @@ class ProgressStore {
   }
 
   all(): ChallengeRow[] {
-    return this.db.prepare("SELECT * FROM challenges ORDER BY id").all() as unknown as ChallengeRow[]
+    const rows = this.db
+      .prepare(`
+        SELECT
+          c.*,
+          CASE
+            WHEN COUNT(cd.dependency_id) = 0 THEN '[]'
+            ELSE json_group_array(cd.dependency_id)
+          END AS dependencies
+        FROM challenges c
+        LEFT JOIN challenge_dependencies cd ON cd.challenge_id = c.id
+        GROUP BY c.id
+        ORDER BY c.id
+      `)
+      .all() as DbChallengeRow[]
+    return rows.map((r) => ({ ...r, dependencies: JSON.parse(r.dependencies) }))
   }
 }
 
