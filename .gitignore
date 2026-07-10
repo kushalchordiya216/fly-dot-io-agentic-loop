@@ -3,3 +3,4 @@ node_modules/
 dist/
 challenges.json
 *.log
+spec.md

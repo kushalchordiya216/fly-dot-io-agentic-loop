@@ -48,15 +48,12 @@ const PASS_SIGNAL = /Everything looks good!/i
 // ── MaelstromManager ──────────────────────────────────────────────────────
 
 class MaelstromManager {
-  private ready = false
 
   async ensureReady(): Promise<void> {
-    if (this.ready) return
     const env = this.buildEnv()
     await this.ensureGo(env)
     await this.ensureJava()
     await this.ensureMaelstrom(env)
-    this.ready = true
   }
 
   async test(opts: TestOptions): Promise<TestResult> {
