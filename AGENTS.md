@@ -48,6 +48,7 @@ src/
   prompts.ts            # prompt loader: read + cache + template substitution
   crawl-challenges.ts   # challenge crawler: fetch → LLM extract → save JSON
   subagent.ts           # generic subagent runner (scoped tools, bounded iterations)
+  subagent-registry.ts  # Singleton tracking all running subagents (handles, abort, event queues)
   tools/
     web-fetch.ts        # fetch URL, extract content via Mozilla Readability
     bash.ts             # async process mgmt: spawn / status / kill
@@ -62,6 +63,8 @@ prompts/
   extract-challenge.txt # LLM prompt: extract {title, description, next_link} from page
 ```
 
+The orchestrator holds a local `Map<string, SubagentHandle>` — it registers subagents on `startSubagent()`, removes them on `"complete"`, and can enumerate/abort any subset. A potential future tool (`subagent_status`) queries this map.
+
 The loop starts with a user prompt + tool definitions. Each turn:
 1. Call `models.complete()` with context + tools
 2. Check response for `toolCall` blocks
@@ -70,7 +73,7 @@ The loop starts with a user prompt + tool definitions. Each turn:
 
 ## Current Progress
 
-**Last updated: 2026-07-05**
+**Last updated: 2026-07-10**
 
 ### Done
 - [x] TypeScript project bootstrapped (tsconfig, tsx runner, strict mode)
@@ -101,86 +104,63 @@ The loop starts with a user prompt + tool definitions. Each turn:
 - [x] All stale remote branches and worktrees cleaned up. Only `main` remains.
 
 ### In Flight
-Nothing currently in progress.
+- [x] **Non-blocking subagent** — `src/subagent.ts` now exports both
+      `startSubagent()` (event-driven, returns `{ id, abort }`) and
+      `runSubagent()` (backward-compatible Promise wrapper). Abort support
+      via `AbortController` wired into pi-ai `models.complete()` signal.
 
 ### Blocked
 Nothing currently blocked.
 
-## Architectural TODOs (Next Session)
+## TODO (Next Session)
 
-**Last updated: 2026-07-05**
+**Last updated: 2026-07-10**
 
-These are open design questions from the brainstorming session. Each needs a
-decision before implementation begins.
+These are the remaining tasks to get the full end-to-end loop running.
 
-### Outer loop — TS orchestrator with DAG scheduling
-- [ ] **Fetch all challenges upfront** — crawl fly.io/dist-sys/ and collect
-      every challenge page (URL, title, dependencies).
-      ✅ *Done — crawler saves all challenges to `challenges.json`*
-- [ ] **Build a dependency DAG** — arrange challenges by their stated
-      prerequisites. Some challenges are independent and can run in parallel;
-      others depend on earlier ones being solved first.
-- [ ] **Scheduler** — fire off subagents for tasks whose dependencies are
-      complete. Track in-flight vs. done vs. failed. Re-run failed ones with
-      bounded retries.
+### Layer 2 (Build)
 
-### Inner loop — subagent per challenge
-- [ ] **Subagent abstraction** — each challenge gets its own LLM context +
-      tool loop (solve → test → fix → repeat). Subagent is spawned by the
-      outer orchestrator with a scoped system prompt for that challenge.
-      ✅ *Done — see `src/subagent.ts`*
-- [ ] **Scoped tool access** — subagent gets `web_fetch` (for the challenge
-      page), file tools, bash, and the test tool. No access to other
-      challenges' state.
-      ✅ *Done — runSubagent accepts tools array*
-- [ ] **Bounded iterations** — cap the inner loop (e.g. 10 attempts) before
-      giving up and reporting failure to the orchestrator.
-      ✅ *Done — maxSteps parameter in runSubagent*
+- [ ] **Progress store** — SQLite-backed (`node:sqlite`) CRUD for per-challenge
+      status, tags, solution notes, dependency graph. `src/progress.ts`
+- [ ] **Maelstrom tool** — tool handle that builds Go code, runs
+      `maelstrom test`, returns structured pass/fail. `src/tools/maelstrom.ts`
+- [x] **Non-blocking subagent** — refactor `runSubagent` from a blocking
+      function call into an event-driven worker that pushes results back to
+      the main loop via callbacks/messages, so the orchestrator can fire and
+      forget
+- [ ] **Subagent registry** — singleton `src/subagent-registry.ts` that
+      tracks all running subagents by ID, storing handles and abort fns so
+      the orchestrator (and future tools like `subagent_status`) can query or
+      cancel them
+- [ ] **Outer orchestrator** — rewrite `src/index.ts` to crawl → seed DB →
+      loop over ready challenges → dispatch non-blocking subagents → hang
+      until results arrive
+- [ ] **Solver prompt wiring** — pass challenge data, dependency artifact
+      paths into `solver-system.txt` template variables
 
-### File tools
-- [x] **`file_write`** — full overwrite. Good for new files and small files.
-- [x] **`file_edit`** — surgical SEARCH/REPLACE via `editkit`'s `fuzzyReplace`.
-      Indentation-flexible, trailing-whitespace tolerant. Returns structured
-      errors for not-found / ambiguous-match cases.
-- [x] **`file_read`** — full or line-range read (offset/limit).
-- [x] **`file_grep`** — search a file for a pattern (string or regex), with
-      optional context lines before/after each match.
-- [x] **`file_list`** — list files and directories.
+### Layer 3 (Optimise)
 
-### Test tool / test subagent
-- [ ] **Dedicated test primitive** — whose only job is to test a given
-      challenge's implemented solution and return a structured result:
-      `{ result: "pass" | "fail", message: "<why>" }`.
-      Open question: is this a **tool** the subagent calls (simpler, stays
-      in-process), or a **separate subagent** (more isolated, can retry
-      independently)? Lean toward tool for now.
-- [ ] **Maelstrom wrapper** — wrap `maelstrom test -w <workload> --bin ...`
-      so the test primitive doesn't need raw bash. Parses the
-      `Everything looks good!` success signal and extracts failure context
-      from stderr/logs.
+- [ ] **Parallel DAG scheduler** — fan-out subagents for independent challenges
+- [ ] **Port pool in MaelstromManager** — avoid port collisions during
+      concurrent test runs
+- [ ] **Carried summaries** — inject "lessons learned" from completed
+      challenges into dependent subagent prompts
+- [ ] **Observability** — instrument every subagent run: token counts, turn
+      counts, retries, wall-clock latency per challenge, and total cost
+      (tokens × model pricing) for the full loop. Expose via structured log
+      or `progress.db` columns.
 
-### Progress store
-- [ ] **Persistent + concurrency-safe + in-process readable** — as multiple
-      subagents run in parallel, they need to record progress (which
-      challenge is in-flight / passed / failed, attempt count, last error)
-      somewhere the orchestrator can read without race conditions.
-      Candidates: a JSON file with a file lock, SQLite, or an in-memory
-      map that checkpoints to disk. Tech TBD.
-- [ ] **Schema** — what fields per challenge: id, url, title, status,
-      attempts, last_error, solution_path, completed_at?
+### Layer 4 (Polish)
 
-### Context management
-- [ ] **Fresh context per subagent** — each challenge gets a clean LLM
-      context (bounded, no cross-challenge bleed).
-- [ ] **Carried summary** (optional) — after a challenge passes, ask the
-      subagent for a short "lessons learned" that the orchestrator can
-      inject into dependent challenges' prompts. Preserves insights
-      without unbounded context growth.
-
-### Environment
-- [ ] **Maelstrom + Go bootstrap** — is Maelstrom + OpenJDK + Go already
-      installed on the host, or does the orchestrator need to detect and
-      install them before starting challenges?
+- [ ] **Solution archiving & evaluation** — archive each successful solution
+      (source, prompt, metadata) by model variant. Enable re-running the full
+      loop with different model combos to compare success rates, cost, latency.
+- [ ] **Multi-model evaluation script** — script to run the full loop across
+      many LLM model/providers, aggregate results, and produce a comparison
+      report (success rate, cost, latency per challenge per model).
+- [ ] **Test result caching** — skip re-testing unchanged binaries
+- [ ] **Retry with exponential backoff** — per-subagent retry policy
+- [ ] **Progress query UI** — CLI or dashboard over `progress.db`
 
 ## Important Artifacts
 
@@ -191,6 +171,7 @@ decision before implementation begins.
   background processes across turns. Auto-cleanup every 30s via `setInterval`.
 - **`challenges.json`** (gitignored) — generated by `crawlAllChallenges()`, all 14 Fly.io
   Distributed Systems challenges with title, description, link, next_link.
+- **`spec.md`** — detailed specs for remaining Layer 2–4 tasks
 
 ## Prompt Management
 
