@@ -15,7 +15,7 @@ export interface ChallengeRow {
   solution_path: string | null
   tags: string | null
   solution_note: string | null
-  dependencies: string
+  dependencies: string[]
   completed_at: number | null
 }
 
@@ -37,55 +37,105 @@ class ProgressStore {
   }
 
   init(): void {
+    this.db.exec(`DROP TABLE IF EXISTS challenge_dependencies`)
+    this.db.exec(`DROP TABLE IF EXISTS challenges`)
     this.db.exec(`
-      CREATE TABLE IF NOT EXISTS challenges (
+      CREATE TABLE challenges (
         id            TEXT PRIMARY KEY,
         url           TEXT NOT NULL,
         title         TEXT NOT NULL,
         description   TEXT NOT NULL,
-        status        TEXT NOT NULL DEFAULT 'pending',
+        status        TEXT NOT NULL DEFAULT 'pending'
+                      CHECK(status IN ('pending', 'in_progress', 'completed', 'failed')),
         attempts      INTEGER NOT NULL DEFAULT 0,
         last_error    TEXT,
         solution_path TEXT,
         tags          TEXT,
         solution_note TEXT,
-        dependencies  TEXT NOT NULL DEFAULT '[]',
         completed_at  INTEGER
+      )
+    `)
+    this.db.exec(`
+      CREATE TABLE challenge_dependencies (
+        challenge_id  TEXT NOT NULL REFERENCES challenges(id) ON DELETE CASCADE,
+        dependency_id TEXT NOT NULL REFERENCES challenges(id) ON DELETE CASCADE,
+        PRIMARY KEY (challenge_id, dependency_id),
+        CHECK(challenge_id != dependency_id)
       )
     `)
   }
 
   seed(challenges: SeedChallenge[]): void {
-    const stmt = this.db.prepare(
-      `INSERT OR REPLACE INTO challenges (id, url, title, description, dependencies)
-       VALUES (?, ?, ?, ?, ?)`,
+    const insertChallenge = this.db.prepare(
+      `INSERT OR REPLACE INTO challenges (id, url, title, description)
+       VALUES (?, ?, ?, ?)`,
+    )
+    const insertDep = this.db.prepare(
+      `INSERT OR IGNORE INTO challenge_dependencies (challenge_id, dependency_id)
+       VALUES (?, ?)`,
     )
     for (const c of challenges) {
-      stmt.run(c.id, c.url, c.title, c.description, JSON.stringify(c.dependencies ?? []))
+      insertChallenge.run(c.id, c.url, c.title, c.description)
+      for (const dep of c.dependencies ?? []) {
+        insertDep.run(c.id, dep)
+      }
     }
   }
 
+  private withDeps(): string {
+    return `(
+      SELECT COALESCE(json_group_array(dependency_id), '[]')
+      FROM challenge_dependencies
+      WHERE challenge_id = c.id
+    ) as dependencies`
+  }
+
+  private fromDb(raw: Record<string, unknown>): ChallengeRow {
+    return {
+      ...raw,
+      dependencies: JSON.parse(raw.dependencies as string),
+    } as unknown as ChallengeRow
+  }
+
   get(id: string): ChallengeRow | null {
-    const row = this.db.prepare("SELECT * FROM challenges WHERE id = ?").get(id) as
-      | ChallengeRow
-      | undefined
-    return row ?? null
+    const row = this.db
+      .prepare(`SELECT c.*, ${this.withDeps()} FROM challenges c WHERE c.id = ?`)
+      .get(id) as Record<string, unknown> | undefined
+    return row ? this.fromDb(row) : null
   }
 
   getByStatus(status: string): ChallengeRow[] {
-    return this.db
-      .prepare("SELECT * FROM challenges WHERE status = ?")
-      .all(status) as unknown as ChallengeRow[]
+    return (
+      this.db
+        .prepare(`SELECT c.*, ${this.withDeps()} FROM challenges c WHERE c.status = ? ORDER BY c.id`)
+        .all(status) as Record<string, unknown>[]
+    ).map((r) => this.fromDb(r))
   }
 
   getReady(): ChallengeRow[] {
-    return this.db
-      .prepare("SELECT * FROM challenges WHERE status = 'pending' ORDER BY id")
-      .all() as unknown as ChallengeRow[]
+    return (
+      this.db
+        .prepare(`
+          SELECT c.*, ${this.withDeps()}
+          FROM challenges c
+          WHERE c.status = 'pending'
+            AND (
+              NOT EXISTS (SELECT 1 FROM challenge_dependencies WHERE challenge_id = c.id)
+              OR NOT EXISTS (
+                SELECT 1
+                FROM challenge_dependencies cd
+                JOIN challenges d ON d.id = cd.dependency_id
+                WHERE cd.challenge_id = c.id AND d.status != 'completed'
+              )
+            )
+          ORDER BY c.id
+        `)
+        .all() as Record<string, unknown>[]
+    ).map((r) => this.fromDb(r))
   }
 
   update(id: string, partial: Partial<ChallengeRow>): void {
-    const keys = Object.keys(partial).filter((k) => k !== "id")
+    const keys = Object.keys(partial).filter((k) => k !== "id" && k !== "dependencies")
     if (keys.length === 0) return
 
     const setClause = keys.map((k) => `${k} = ?`).join(", ")
@@ -98,7 +148,11 @@ class ProgressStore {
   }
 
   all(): ChallengeRow[] {
-    return this.db.prepare("SELECT * FROM challenges ORDER BY id").all() as unknown as ChallengeRow[]
+    return (
+      this.db
+        .prepare(`SELECT c.*, ${this.withDeps()} FROM challenges c ORDER BY c.id`)
+        .all() as Record<string, unknown>[]
+    ).map((r) => this.fromDb(r))
   }
 }
 
