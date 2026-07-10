@@ -39,10 +39,8 @@ class ProgressStore {
   }
 
   init(): void {
-    this.db.exec(`DROP TABLE IF EXISTS challenge_dependencies`)
-    this.db.exec(`DROP TABLE IF EXISTS challenges`)
     this.db.exec(`
-      CREATE TABLE challenges (
+      CREATE TABLE IF NOT EXISTS challenges (
         id            TEXT PRIMARY KEY,
         url           TEXT NOT NULL,
         title         TEXT NOT NULL,
@@ -58,7 +56,7 @@ class ProgressStore {
       )
     `)
     this.db.exec(`
-      CREATE TABLE challenge_dependencies (
+      CREATE TABLE IF NOT EXISTS challenge_dependencies (
         challenge_id  TEXT NOT NULL REFERENCES challenges(id) ON DELETE CASCADE,
         dependency_id TEXT NOT NULL REFERENCES challenges(id) ON DELETE CASCADE,
         PRIMARY KEY (challenge_id, dependency_id),
