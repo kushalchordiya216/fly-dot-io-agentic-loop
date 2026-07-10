@@ -6,6 +6,7 @@ import * as fileList from "./file-list"
 import * as fileEdit from "./file-edit"
 import * as fileGrep from "./file-grep"
 import * as maelstrom from "./maelstrom"
+import * as progress from "../progress"
 import { tools as bashTools } from "./bash"
 
 const allTools = [
@@ -16,6 +17,7 @@ const allTools = [
   { definition: fileEdit.definition, handle: fileEdit.handle },
   { definition: fileGrep.definition, handle: fileGrep.handle },
   { definition: maelstrom.definition, handle: maelstrom.handle },
+  { definition: progress.definition, handle: progress.handle },
   ...bashTools,
 ]
 
