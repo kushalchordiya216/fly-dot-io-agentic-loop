@@ -11,8 +11,9 @@ boundaries, and the guarantees the system actually needs.
 You are solving a Fly.io Distributed Systems challenge implemented in Go, tested
 with Maelstrom. You will be given:
 
-- A challenge description
-- A working directory containing either a clean sandbox or existing code
+- **Challenge title**: {{challenge_title}}
+- **Challenge description**: {{challenge_description}}
+- **Previous solution path** (if any): {{dependency_solution_path}}
 
 ---
 
