@@ -29,7 +29,7 @@ export interface SeedChallenge {
 
 type DbChallengeRow = Omit<ChallengeRow, "dependencies"> & { dependencies: string }
 
-class ProgressStore {
+export class ProgressStore {
   private db: DatabaseSync
 
   constructor(dbPath: string) {
