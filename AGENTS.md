@@ -6,7 +6,7 @@ autonomous, running as a TypeScript process that calls the opencode Zen LLM.
 
 ## Freshness Verification — READ THIS FIRST
 
-**Last updated: 2026-07-05**
+**Last updated: 2026-07-10**
 
 This file is self-referential. Every section has a `yyyy-mm-dd` date stamp.
 Whenever you start a new session, for every section you intend to use:
@@ -27,7 +27,7 @@ document, not a historical record.
 
 ## Stack
 
-**Last updated: 2026-07-05**
+**Last updated: 2026-07-10**
 
 | Layer | Choice |
 |-------|--------|
@@ -40,7 +40,7 @@ document, not a historical record.
 
 ## Architecture
 
-**Last updated: 2026-07-05**
+**Last updated: 2026-07-10**
 
 ```
 src/
@@ -48,7 +48,8 @@ src/
   prompts.ts            # prompt loader: read + cache + template substitution
   crawl-challenges.ts   # challenge crawler: fetch → LLM extract → save JSON
   subagent.ts           # generic subagent runner (scoped tools, bounded iterations)
-  subagent-registry.ts  # Singleton tracking all running subagents (handles, abort, event queues)
+  progress.ts           # SQLite progress store (node:sqlite, FK deps)
+  subagent-registry.ts  # [TODO] singleton tracking running subagents
   tools/
     web-fetch.ts        # fetch URL, extract content via Mozilla Readability
     bash.ts             # async process mgmt: spawn / status / kill
@@ -57,6 +58,7 @@ src/
     file-edit.ts        # surgical SEARCH/REPLACE via editkit fuzzyReplace
     file-grep.ts        # search file for pattern with context lines
     file-list.ts        # list directory contents
+    maelstrom.ts        # Go build + maelstrom test runner
     index.ts            # tool registry + dispatcher
 prompts/
   echo-system.txt       # system prompt for challenge #1
@@ -102,12 +104,12 @@ The loop starts with a user prompt + tool definitions. Each turn:
 - [x] **PR #6** (`task/crawler` → `main`): merged.
       Challenge crawler: `src/crawl-challenges.ts` uses `web_fetch` + LLM extraction → `challenges.json`.
 - [x] All stale remote branches and worktrees cleaned up. Only `main` remains.
-
-### In Flight
-- [x] **Non-blocking subagent** — `src/subagent.ts` now exports both
-      `startSubagent()` (event-driven, returns `{ id, abort }`) and
-      `runSubagent()` (backward-compatible Promise wrapper). Abort support
-      via `AbortController` wired into pi-ai `models.complete()` signal.
+- [x] **PR #7** (`task/subagent-event-driven` → `main`): merged.
+      Non-blocking subagent: `startSubagent()` event-driven API with AbortController.
+- [x] **PR #8** (`07-10-wip_progress_store` → `main`): merged.
+      Progress store: `node:sqlite` CRUD, FK dependency graph, `getReady` single-query JOIN.
+- [x] **PR #9** (`07-10-wip_maelstrom_tool` → `main`): merged.
+      Maelstrom tool: Go build + `maelstrom test` runner in `src/tools/maelstrom.ts`.
 
 ### Blocked
 Nothing currently blocked.
@@ -120,14 +122,6 @@ These are the remaining tasks to get the full end-to-end loop running.
 
 ### Layer 2 (Build)
 
-- [ ] **Progress store** — SQLite-backed (`node:sqlite`) CRUD for per-challenge
-      status, tags, solution notes, dependency graph. `src/progress.ts`
-- [ ] **Maelstrom tool** — tool handle that builds Go code, runs
-      `maelstrom test`, returns structured pass/fail. `src/tools/maelstrom.ts`
-- [x] **Non-blocking subagent** — refactor `runSubagent` from a blocking
-      function call into an event-driven worker that pushes results back to
-      the main loop via callbacks/messages, so the orchestrator can fire and
-      forget
 - [ ] **Subagent registry** — singleton `src/subagent-registry.ts` that
       tracks all running subagents by ID, storing handles and abort fns so
       the orchestrator (and future tools like `subagent_status`) can query or
@@ -164,7 +158,7 @@ These are the remaining tasks to get the full end-to-end loop running.
 
 ## Important Artifacts
 
-**Last updated: 2026-07-05**
+**Last updated: 2026-07-10**
 
 - **`.env`** (gitignored) — `OPENCODE_API_KEY` for LLM auth
 - **`src/tools/bash.ts`** — in-memory `Map<string, ProcessEntry>` tracks all
@@ -175,7 +169,7 @@ These are the remaining tasks to get the full end-to-end loop running.
 
 ## Prompt Management
 
-**Last updated: 2026-07-05**
+**Last updated: 2026-07-10**
 
 Prompts live in `prompts/*.txt` and are loaded by `src/prompts.ts` via
 `get(name, vars?)`.
@@ -205,7 +199,7 @@ Prompts live in `prompts/*.txt` and are loaded by `src/prompts.ts` via
 
 ## General Behaviour
 
-**Last updated: 2026-07-05**
+**Last updated: 2026-07-10**
 
 When investigating dependencies, libraries, or tools, prefer official docs,
 READMEs, or package documentation over reading source code directly. Fetch docs
@@ -213,7 +207,7 @@ first; only fall back to source or `node_modules` when docs are insufficient.
 
 ## Development Workflow
 
-**Last updated: 2026-07-05**
+**Last updated: 2026-07-10**
 
 ### Graphite (PR stack management)
 
